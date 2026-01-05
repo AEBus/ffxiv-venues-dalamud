@@ -1,58 +1,173 @@
-﻿using System.Collections.Generic;
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
+using System.Reflection;
 using System.Threading.Tasks;
-using Dalamud.Interface.Internal;
+using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin;
+using Dalamud.Plugin.Services;
 
 namespace FFXIVVenues.Dalamud;
 
-public class VenueService : IVenueService
+public sealed class VenueService : IVenueService, IDisposable
 {
-    private readonly DalamudPluginInterface _pluginInterface;
+    private static readonly byte[] FallbackLoadingImage = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAgMBAp+N7WAAAAAASUVORK5CYII=");
+
+    private readonly IDalamudPluginInterface _pluginInterface;
     private readonly HttpClient _httpClient;
-    private Dictionary<string, IDalamudTextureWrap?> _banners;
-    private Dictionary<string, Task> _bannerTasks;
+    private readonly ITextureProvider _textureProvider;
+    private readonly Dictionary<string, IDalamudTextureWrap?> _banners = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Task> _bannerTasks = new(StringComparer.OrdinalIgnoreCase);
     private readonly IDalamudTextureWrap _loadingTexture;
+    private readonly object _bannerLock = new();
+    private bool _disposed;
 
-    public VenueService(DalamudPluginInterface pluginInterface, HttpClient httpClient)
+    public VenueService(IDalamudPluginInterface pluginInterface, HttpClient httpClient, ITextureProvider textureProvider)
     {
-        this._pluginInterface = pluginInterface;
-        this._httpClient = httpClient;
-        this._banners = new();
-        this._bannerTasks = new();
-        var loadingImage = Path.Combine(this._pluginInterface.AssemblyLocation.Directory?.FullName!, "loading.png");
-        this._loadingTexture = this._pluginInterface.UiBuilder.LoadImage(loadingImage);
+        _pluginInterface = pluginInterface;
+        _httpClient = httpClient;
+        _textureProvider = textureProvider;
+        _loadingTexture = LoadLoadingTexture();
     }
 
-    public IDalamudTextureWrap? GetVenueBanner(string venueId)
+    public IDalamudTextureWrap? GetVenueBanner(string venueId, Uri? bannerUri)
     {
-        var bannerExists = this._banners.TryGetValue(venueId, out var banner);
-        if (bannerExists)
-            return banner;
+        var requestUri = bannerUri?.ToString() ?? $"venue/{venueId}/media";
+        lock (_bannerLock)
+        {
+            if (_banners.TryGetValue(requestUri, out var banner))
+            {
+                return banner;
+            }
 
-        if ( ! _bannerTasks.ContainsKey(venueId))
-            _bannerTasks[venueId] = this._httpClient.GetAsync($"venue/banner/{venueId}")
-                .ContinueWith(t => this.OnBannerResponseAsync(venueId, t))
-                .ContinueWith(t => _bannerTasks.Remove(venueId));
-        
-        return this._loadingTexture;
+            if (!_bannerTasks.ContainsKey(requestUri))
+            {
+                _bannerTasks[requestUri] = FetchBannerAsync(requestUri);
+            }
+        }
+
+        return _loadingTexture;
     }
 
-    private async Task OnBannerResponseAsync(string venueId, Task<HttpResponseMessage> task)
+    private async Task FetchBannerAsync(string requestUri)
     {
-        if (!task.IsCompletedSuccessfully)
-            _banners[venueId] = null;
+        try
+        {
+            using var response = await _httpClient.GetAsync(requestUri).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                lock (_bannerLock)
+                {
+                    _banners[requestUri] = null;
+                }
 
-        var response = task.Result;
-        var stream = await response.Content.ReadAsByteArrayAsync();
-        _banners[venueId] = _pluginInterface.UiBuilder.LoadImage(stream);
+                return;
+            }
+
+            var bytes = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+            var texture = await _textureProvider
+                .CreateFromImageAsync(bytes, $"FFXIVVenues.Banner.{requestUri}")
+                .ConfigureAwait(false);
+
+            lock (_bannerLock)
+            {
+                if (_banners.TryGetValue(requestUri, out var existing))
+                {
+                    existing?.Dispose();
+                }
+
+                _banners[requestUri] = texture;
+            }
+        }
+        catch
+        {
+            lock (_bannerLock)
+            {
+                _banners[requestUri] = null;
+            }
+        }
+        finally
+        {
+            lock (_bannerLock)
+            {
+                _bannerTasks.Remove(requestUri);
+            }
+        }
     }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        lock (_bannerLock)
+        {
+            foreach (var banner in _banners.Values)
+            {
+                banner?.Dispose();
+            }
+
+            _banners.Clear();
+            _bannerTasks.Clear();
+        }
+
+        _loadingTexture.Dispose();
+    }
+
+    private IDalamudTextureWrap LoadLoadingTexture()
+    {
+        var assemblyDirectory = _pluginInterface.AssemblyLocation.Directory?.FullName;
+        var candidatePaths = assemblyDirectory == null
+            ? Array.Empty<string>()
+            : new[]
+            {
+                Path.Combine(assemblyDirectory, "Assets", "loading.png"),
+                Path.Combine(assemblyDirectory, "loading.png"),
+            };
+
+        foreach (var path in candidatePaths)
+        {
+            if (!File.Exists(path))
+            {
+                continue;
+            }
+
+            var bytes = File.ReadAllBytes(path);
+            return CreateTexture(bytes, $"FFXIVVenues.Loading.{Path.GetFileName(path)}");
+        }
+
+        var assembly = Assembly.GetExecutingAssembly();
+        foreach (var resourceName in assembly.GetManifestResourceNames())
+        {
+            if (!resourceName.EndsWith("loading.png", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            using var stream = assembly.GetManifestResourceStream(resourceName);
+            if (stream == null)
+            {
+                continue;
+            }
+
+            using var memoryStream = new MemoryStream();
+            stream.CopyTo(memoryStream);
+            return CreateTexture(memoryStream.ToArray(), "FFXIVVenues.Loading.Embedded");
+        }
+
+        return CreateTexture(FallbackLoadingImage, "FFXIVVenues.Loading.Fallback");
+    }
+
+    private IDalamudTextureWrap CreateTexture(byte[] bytes, string debugName) =>
+        _textureProvider.CreateFromImageAsync(bytes, debugName).GetAwaiter().GetResult();
 }
 
 public interface IVenueService
 {
-
-    IDalamudTextureWrap? GetVenueBanner(string venueId);
-
+    IDalamudTextureWrap? GetVenueBanner(string venueId, Uri? bannerUri);
 }

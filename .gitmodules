@@ -1,0 +1,3 @@
+[submodule "ffxiv-venues-domain-services"]
+	path = ffxiv-venues-domain-services
+	url = https://github.com/FFXIVVenues/ffxiv-venues-domain-services

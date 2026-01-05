@@ -5,6 +5,7 @@
   "Description": "Use /venues",
   "InternalName": "FFXIVVenues.Dalamud",
   "ApplicableVersion": "any",
+  "DalamudApiLevel": 14,
   "Tags": [
     "venues",
     "venue",

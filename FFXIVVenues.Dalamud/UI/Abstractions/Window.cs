@@ -1,45 +1,52 @@
-﻿using Dalamud.Interface;
-using ImGuiNET;
 using System.Numerics;
+using Dalamud.Bindings.ImGui;
+using Dalamud.Interface;
 
-namespace FFXIVVenues.Dalamud.UI.Abstractions
+namespace FFXIVVenues.Dalamud.UI.Abstractions;
+
+internal abstract class Window
 {
-    internal abstract class Window
+    private bool _visible;
+    private bool _sizeInitialized;
+
+    protected Window(UiBuilder uiBuilder)
     {
-        public bool Visible => _visible;
-        protected string Title { get; set; } = "FFXIV Venues";
-        protected Vector2 InitialSize { get; set; } = new Vector2(600, 450);
-        protected Vector2 MinimumSize { get; set; } = new Vector2(300, 200);
-        protected Vector2 MaximumSize { get; set; } = new Vector2(1000, 1000);
-        protected ImGuiWindowFlags WindowFlags { get; set; } = ImGuiWindowFlags.None;
-
-        private bool _visible = false;
-
-        public Window(UiBuilder uiBuilder) {
-            uiBuilder.Draw += this.Draw;
-        }
-
-        public void Show() =>
-            this._visible = true;
-
-        public void Hide() =>
-            this._visible = false;
-
-        public void Draw()
-        {
-            if (!this._visible)
-                return;
-
-            ImGui.SetNextWindowSize(this.InitialSize, ImGuiCond.Always);
-            ImGui.SetNextWindowSizeConstraints(this.MinimumSize, this.MaximumSize);
-            if (ImGui.Begin(this.Title, ref this._visible, this.WindowFlags))
-            {
-                this.Render();
-            };
-            ImGui.End();
-        }
-
-        public abstract void Render();
-
+        uiBuilder.Draw += Draw;
     }
+
+    public bool Visible => _visible;
+
+    protected string Title { get; set; } = "FFXIV Venues";
+    protected Vector2 InitialSize { get; set; } = new(600, 450);
+    protected Vector2 MinimumSize { get; set; } = new(300, 200);
+    protected Vector2 MaximumSize { get; set; } = new(1000, 1000);
+    protected ImGuiWindowFlags WindowFlags { get; set; } = ImGuiWindowFlags.None;
+
+    public void Show() => _visible = true;
+
+    public void Hide() => _visible = false;
+
+    public void Draw()
+    {
+        if (!_visible)
+        {
+            return;
+        }
+
+        if (!_sizeInitialized)
+        {
+            ImGui.SetNextWindowSize(InitialSize, ImGuiCond.FirstUseEver);
+            _sizeInitialized = true;
+        }
+
+        ImGui.SetNextWindowSizeConstraints(MinimumSize, MaximumSize);
+        if (ImGui.Begin(Title, ref _visible, WindowFlags))
+        {
+            Render();
+        }
+
+        ImGui.End();
+    }
+
+    public abstract void Render();
 }

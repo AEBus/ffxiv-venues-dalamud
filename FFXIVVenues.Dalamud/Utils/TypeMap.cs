@@ -1,60 +1,49 @@
-﻿using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.Extensions.DependencyInjection;
 
-namespace FFXIVVenues.Dalamud.Utils
+namespace FFXIVVenues.Dalamud.Utils;
+
+internal sealed class TypeMap<T> where T : class
 {
-    internal class TypeMap<T> where T : class
+    private readonly Dictionary<string, Type> _typeMap = new();
+    private readonly IServiceProvider _serviceProvider;
+
+    public TypeMap(IServiceProvider serviceProvider)
     {
+        _serviceProvider = serviceProvider;
+    }
 
-        public string[] Keys => this._typeMap.Keys.ToArray();
+    public string[] Keys => _typeMap.Keys.ToArray();
 
-        private readonly Dictionary<string, Type> _typeMap = new();
-        private readonly IServiceProvider _serviceProvider;
+    public TypeMap<T> Add<TConcrete>(string key) where TConcrete : T
+    {
+        _typeMap.Add(key, typeof(TConcrete));
+        return this;
+    }
 
-        public TypeMap(IServiceProvider serviceProvider)
+    public TypeMap<T> Add(string key, Type type)
+    {
+        if (!type.IsAssignableTo(typeof(T)))
         {
-            _serviceProvider = serviceProvider;
+            throw new ArgumentException($"Type {type.Name} is not of type {typeof(T).Name}");
         }
 
-        public TypeMap<T> Add<A>(string key) where A : T
+        _typeMap.Add(key, type);
+        return this;
+    }
+
+    public bool ContainsKey(string key) => _typeMap.ContainsKey(key);
+
+    public T? Activate(string key, IServiceProvider? serviceProvider = null)
+    {
+        serviceProvider ??= _serviceProvider;
+        if (!_typeMap.TryGetValue(key, out var type))
         {
-            _typeMap.Add(key, typeof(A));
-            return this;
+            return null;
         }
 
-        public TypeMap<T> Add(string key, Type type)
-        {
-            var @requiredType = typeof(T);
-            if (!type.IsAssignableTo(@requiredType))
-                throw new ArgumentException($"Type {type.Name} is not of type {@requiredType.Name}");
-            _typeMap.Add(key, type);
-            return this;
-        }
-
-        public bool ContainsKey(string key)
-        {
-            return _typeMap.ContainsKey(key);
-        }
-
-        public Type Get(string key)
-        {
-            return _typeMap[key];
-        }
-
-        public T? Activate(string key, IServiceProvider? serviceProvider = null)
-        {
-            if (serviceProvider == null)
-                serviceProvider = this._serviceProvider;
-
-            var hasKey = _typeMap.ContainsKey(key);
-            if (!hasKey)
-            {
-                return default;
-            }
-            return ActivatorUtilities.CreateInstance(serviceProvider, _typeMap[key]) as T;
-        }
-
+        return ActivatorUtilities.CreateInstance(serviceProvider, type) as T;
     }
 }

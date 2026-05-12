@@ -6,7 +6,7 @@
   "InternalName": "FFXIV.Venues.Directory",
   "RepoUrl": "https://github.com/AEBus/FFXIV.Venues.Directory",
   "TestingDalamudApiLevel": 15,
-  "Changelog": "Window resizing update.\n\n- The directory window can now be resized larger while keeping 1280x720 as the minimum supported size.",
+  "Changelog": "Window resizing update.\n\n- The directory window can now be resized larger while keeping 1280x720 as the minimum supported size.\n- Corrected window sizing values so Dalamud applies UI scaling consistently.",
   "Tags": [
     "venues",
     "directory",

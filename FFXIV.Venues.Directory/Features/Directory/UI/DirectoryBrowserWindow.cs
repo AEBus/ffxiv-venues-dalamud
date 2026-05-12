@@ -311,12 +311,12 @@ internal sealed partial class DirectoryBrowserWindow : Window, IDisposable
         EnsurePreferenceCollectionsInitialized();
         SyncPreferredVenueLookups();
 
-        Size = ImGuiHelpers.ScaledVector2(1280f, 720f);
+        Size = new Vector2(1280f, 720f);
         SizeCondition = ImGuiCond.FirstUseEver;
         Flags = ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = ImGuiHelpers.ScaledVector2(1280f, 720f),
+            MinimumSize = new Vector2(1280f, 720f),
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
         };
     }

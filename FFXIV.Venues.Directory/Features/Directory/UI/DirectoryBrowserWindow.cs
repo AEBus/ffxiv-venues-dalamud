@@ -313,11 +313,11 @@ internal sealed partial class DirectoryBrowserWindow : Window, IDisposable
 
         Size = ImGuiHelpers.ScaledVector2(1280f, 720f);
         SizeCondition = ImGuiCond.FirstUseEver;
-        Flags = ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
+        Flags = ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = ImGuiHelpers.ScaledVector2(1280f, 720f),
-            MaximumSize = ImGuiHelpers.ScaledVector2(1280f, 720f),
+            MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
         };
     }
 
